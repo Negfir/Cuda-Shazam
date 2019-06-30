@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-
+#include <cufft.h>
 // CUDA runtime
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
@@ -19,67 +19,69 @@
 /**
 * Matrix multiplication (CUDA Kernel) on the device: C = A * B
 */
-#define M_Size 10
-__constant__ float M[M_Size];
 
-#define TILE_SIZE 1024
-#define MAX_MASK_WIDTH 10
+#define NX 256
+#define BATCH 1
 
-
-#define blockC 1024
-#define gridC 97664
-#define nC 4096
-#define TILE_WIDTH nC/(blockC*gridC);
 __global__ void
-convolution_1(int *A, int *B, int *C) {
+compareKernel(int *A, int *B, int *C) {
 	int i = blockIdx.x*blockDim.x + threadIdx.x;
-	//float Pvalue = 0;
-	if (A[i] = B[i]) {
-		C[0] = 5;
-	}
+	//int Pvalue = 0;
+	C[i] = abs(A[i] - B[i]);
+
+		
 }
 
 
 
 
-int readFile(int *grades);
+int readFile(int **grades, char *addr);
 
 
 
 
 
 
-/*
 
-int CompareWav(int *file1, int *file2, int *res)
+
+int CompareWav()
 {
-
 	
-	int *h_A;
-	int *h_B;
+	int *h_A = NULL;
+	unsigned int count_A;
+	count_A = readFile(&h_A, "M1.txt");
+	
+	
+	int *h_B = NULL;
+	unsigned int count_B;
+	count_B = readFile(&h_B, "M2.txt");
 
-	readFile()
 
-	unsigned int size_A = sizeof(int)* size_A;
-	unsigned int size_B = sizeof(int)* size_B;
+	unsigned int size_A = sizeof(int)* count_A;
+	unsigned int size_B = sizeof(int)* count_B;
 
-	// Initialize host memory
-	const float valM = 0.01f;
-	constantInit(h_N, size_N, 1.0f);
-	//constantInit(h_M, size_M, valM);
-	float New_M[M_Size];
+	unsigned int MinCount= count_B;
 
+	if (count_A < count_B) {
+		MinCount = count_A;
+	}
+
+	unsigned int MaxCount = count_B;
+
+	if (count_A > count_B) {
+		MaxCount = count_A;
+	}
 
 
 
 	// Allocate device memory
-	float *d_N, *d_P;
+	int *d_A, *d_B, *d_C;
 
 	// Allocate host matrix C
-	unsigned int mem_size_P = Width * sizeof(float);
-	float *h_P = (float *)malloc(mem_size_P);
+	unsigned int size_C = sizeof(int)* MinCount;
+	int *h_C = (int *)malloc(size_C);
 
-	if (h_P == NULL)
+	if (h_C == NULL)
 	{
 		fprintf(stderr, "Failed to allocate host matrix C!\n");
 		exit(EXIT_FAILURE);
@@ -87,7 +89,7 @@ int CompareWav(int *file1, int *file2, int *res)
 
 	cudaError_t error;
 
-	error = cudaMalloc((void **)&d_N, mem_size_N);
+	error = cudaMalloc((void **)&d_A, size_A);
 
 	if (error != cudaSuccess)
 	{
@@ -95,9 +97,15 @@ int CompareWav(int *file1, int *file2, int *res)
 		exit(EXIT_FAILURE);
 	}
 
+	error = cudaMalloc((void **)&d_B, size_B);
 
+	if (error != cudaSuccess)
+	{
+		printf("cudaMalloc d_B returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
+		exit(EXIT_FAILURE);
+	}
 
-	error = cudaMalloc((void **)&d_P, mem_size_P);
+	error = cudaMalloc((void **)&d_C, size_C);
 
 	if (error != cudaSuccess)
 	{
@@ -106,7 +114,7 @@ int CompareWav(int *file1, int *file2, int *res)
 	}
 
 	// copy host memory to device
-	error = cudaMemcpy(d_N, h_N, mem_size_N, cudaMemcpyHostToDevice);
+	error = cudaMemcpy(d_A, h_A, size_A, cudaMemcpyHostToDevice);
 
 	if (error != cudaSuccess)
 	{
@@ -114,13 +122,48 @@ int CompareWav(int *file1, int *file2, int *res)
 		exit(EXIT_FAILURE);
 	}
 
+	error = cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice);
 
+	if (error != cudaSuccess)
+	{
+		printf("cudaMemcpy (d_B,h_B) returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
+		exit(EXIT_FAILURE);
+	}
 
+	// -------------cuFFT IS HERE ------------------
+	
+	cufftHandle plan;
+	cufftComplex *data;
+	/*
+	cudaMalloc((void**)&data, sizeof(cufftComplex)*(NX / 2 + 1)*BATCH);
+	if (cudaGetLastError() != cudaSuccess) {
+		fprintf(stderr, "Cuda error: Failed to allocate\n");
+		return;
+	}
+	*/
+	if (cufftPlan1d(&plan, NX, CUFFT_R2C, BATCH) != CUFFT_SUCCESS) {
+		fprintf(stderr, "CUFFT error: Plan creation failed");
+		exit(EXIT_FAILURE);
+	}
+	
+		
+	if (cufftExecR2C(plan, (cufftReal*)d_A, (cufftComplex*)d_A) != CUFFT_SUCCESS) {
+			fprintf(stderr, "CUFFT error: ExecC2C Forward failed");
+			exit(EXIT_FAILURE);
+		}
+	if (cudaDeviceSynchronize() != cudaSuccess) {
+		fprintf(stderr, "Cuda error: Failed to synchronize\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	printf("cuFFT Done :)");
+
+	int gridCount = ceil(MinCount / 1024);
 	// Setup execution parameters
-	dim3 threads(blockC, 1, 1);
-	dim3 grid(gridC, 1, 1);
+	dim3 threads(1024, 1, 1);
+	dim3 grid(gridCount, 1, 1);
 
-	fillDataSet(d_N, New_M, Mask_Width, Width);
+	
 	// Create and start timer
 	printf("Computing result using CUDA Kernel...\n");
 
@@ -153,12 +196,9 @@ int CompareWav(int *file1, int *file2, int *res)
 	}
 
 
-
-
-	cudaMemcpyToSymbol(M, New_M, sizeof(float)*M_Size);
 	// Execute the kernel
-	convolution_3 << < grid, threads >> > (d_N, d_P, Mask_Width, Width);
-	cudaDeviceSynchronize();
+	//compareKernel << < grid, threads >> > (d_A, d_B, d_C);
+	//cudaDeviceSynchronize();
 	error = cudaGetLastError();
 	if (error != cudaSuccess)
 	{
@@ -196,7 +236,7 @@ int CompareWav(int *file1, int *file2, int *res)
 	}
 
 	// Copy result from device to host
-	error = cudaMemcpy(h_P, d_P, mem_size_P, cudaMemcpyDeviceToHost);
+	error = cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost);
 
 	if (error != cudaSuccess)
 	{
@@ -206,21 +246,21 @@ int CompareWav(int *file1, int *file2, int *res)
 
 
 	// Clean up memory
-	free(h_N);
-	//free(h_M);
-	free(h_P);
-	cudaFree(d_N);
-	//cudaFree(d_M);
-	cudaFree(d_P);
+	free(h_A);
+	free(h_B);
+	free(h_C);
+	cudaFree(d_A);
+	cudaFree(d_B);
+	cudaFree(d_C);
 
 
 	return EXIT_SUCCESS;
 
 }
 
-*/
 
-int readFile(int **grades) {
+
+int readFile(int **grades, char *addr) {
 	FILE *fp;
 	int temp;
 	//grades = NULL;
@@ -230,7 +270,7 @@ int readFile(int **grades) {
 	
 
 
-	fp = fopen("CrossingALine.txt", "rb+");
+	fp = fopen(addr, "rb+");
 
 	while (fscanf(fp, "%d", &temp) != EOF)
 
@@ -282,10 +322,12 @@ int readFile(int **grades) {
 */
 int main(int argc, char **argv)
 {
-
+	CompareWav();
+	/*
+	char *addr = argv[1];
 	 int *grades=NULL;
-	unsigned int size;
-	size= readFile(&grades);
+	 unsigned int size;
+	size= readFile(&grades,"M2.txt");
 	int temp = 0;
 
 	printf("Size is %d \n", &size);
@@ -302,6 +344,9 @@ int main(int argc, char **argv)
 	}
 
 	free(grades);
+	*/
+
+
 	/*
 
 	// By default, we use device 0
