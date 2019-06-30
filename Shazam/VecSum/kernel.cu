@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-#include <dirent.h>
+//#include <dirent.h>
 // Adds an additional library so that timeGetTime() can be used
 
 #include <stdlib.h>
@@ -38,7 +38,7 @@ static __global__ void ComplexPointwiseMulAndScale(Complex* A, Complex* B, doubl
 	const int threadID = blockIdx.x * blockDim.x + threadIdx.x;
 	double valueA = 0.0;
 	double valueB = 0.0;
-	double diff = 0.0;
+	double diff = 99999999999999999999999.9;
 	//double fab[sizeA];
 	
 	//int i = threadID;
@@ -50,11 +50,15 @@ static __global__ void ComplexPointwiseMulAndScale(Complex* A, Complex* B, doubl
 					//valueA = sqrt(pow(A[i + j].x, 2) + pow(A[i + j].y, 2));
 					//valueB = sqrt(pow(B[i].x, 2) + pow(B[i].y, 2));
 					res[i] += fabs(sqrt(pow(A[i + j].x, 2) + pow(A[i + j].y, 2)) - sqrt(pow(B[i].x, 2) + pow(B[i].y, 2)));
-					//res[1] += fab;
+					
 				
+			}
+			if (res[i] < diff) {
+				diff = res[i];
 			}
 
 		}
+		res[(sizeA - sizeB) + 1] = diff;
 	}
 	//res[1] = fab;
 }
@@ -93,22 +97,23 @@ int readFile(int **grades, char *addr);
 
 
 
-int CompareWav()
+int CompareWav(char *path1, char *path2, double *a)
 {
+	printf("%s --- %s --- \n", path1, path2);
 	
 	printf("[simpleCUFFT] is starting...\n");
 
 	int *h_A_real = NULL;
 	unsigned int count_A;
-	count_A = readFile(&h_A_real, "M1.txt");
+	count_A = readFile(&h_A_real, path1);
 
 
 	int *h_B_real = NULL;
 	unsigned int count_B;
-	count_B = readFile(&h_B_real, "M2.txt");
+	count_B = readFile(&h_B_real, path2);
 
 
-
+	unsigned int count_C= (count_A - count_B) + 2;
 
 	Complex* h_A = (Complex*)malloc(sizeof(Complex) * count_A);
 	// Initalize the memory for the signal
@@ -153,6 +158,7 @@ int CompareWav()
 
 	unsigned int size_A = sizeof(Complex)* count_A;
 	unsigned int size_B = sizeof(Complex)* count_B;
+	unsigned int size_C = sizeof(double)* count_C;
 	// Allocate device memory for signal
 	Complex* d_A;
 	cudaMalloc((void**)&d_A, size_A);
@@ -169,8 +175,8 @@ int CompareWav()
 		cudaMemcpyHostToDevice);
 
 	double *d_C;
-	cudaMalloc((void**)&d_C, size_A * sizeof(double));
-	double *h_C = (double *)malloc(size_A * sizeof(double));
+	cudaMalloc((void**)&d_C, count_C * sizeof(double));
+	double *h_C = (double *)malloc(count_C * sizeof(double));
 
 	// CUFFT plan
 	cufftHandle planA, planB;
@@ -201,9 +207,12 @@ int CompareWav()
 		printf("FFT is %f %f \n", h_convolved_signal[i].x, h_convolved_signal[i].y);
 	}
 
-	cudaMemcpy(h_C, d_C, size_A * sizeof(double),cudaMemcpyDeviceToHost);
-		printf("LAD IS: %f --- %f --- %f \n", h_C[0], h_C[1],h_C[2]);
-	
+	cudaMemcpy(h_C, d_C, count_C * sizeof(double),cudaMemcpyDeviceToHost);
+	printf("------Count IS: %d - %d = %d \n", count_A, count_B, count_C);
+	for (int i = 0; i < count_C+1; i++) {
+		printf("------LAD IS: %f \n", h_C[i]);
+	}
+	*a = h_C[(count_A - count_B) + 1];
 
 	// Allocate host memory for the convolution result
 	//Complex* h_convolved_signal_ref = (Complex*)malloc(sizeof(Complex) * size_A);
@@ -291,13 +300,88 @@ int readFile(int **grades, char *addr) {
 	
 }
 
+void concatenate_string(char *original, char *add)
+{
+	while (*original)
+		original++;
+
+	while (*add)
+	{
+		*original = *add;
+		add++;
+		original++;
+	}
+	*original = '\0';
+}
 
 /**
 * Program main
 */
 int main(int argc, char **argv)
 {
-	//CompareWav();
+	//char **strings1 = (char**)malloc(10 * sizeof(char*));
+	char arr1[10][30];
+	FILE * database;
+	char buffer1[30];
+	int Count1 = 0;
+
+	database = fopen("SongNames.txt", "r");
+
+	if (NULL == database)
+	{
+		perror("opening database");
+		return (-1);
+	}
+
+	while (EOF != fscanf(database, "%[^\n]\n", buffer1))
+	{
+		//printf("> %s\n", buffer1);
+		strcpy(arr1[Count1], buffer1);
+		Count1++;
+	}
+	fclose(database);
+
+	char arr2[10][30];
+	FILE * database2;
+	char buffer2[30];
+	int Count2 = 0;
+	
+	database2 = fopen("SampleNames.txt", "r");
+
+	if (NULL == database2)
+	{
+		perror("opening database");
+		return (-1);
+	}
+
+	while (EOF != fscanf(database2, "%[^\n]\n", buffer2))
+	{
+		//printf("> %s\n", buffer2);
+		strcpy(arr2[Count2], buffer2);
+		Count2++;
+	}
+	fclose(database2);
+
+	for (int i = 0; i < Count1; i++) {
+		for (int j = 0; j < Count2; j++) {
+			double a = 0.0;
+	
+			char path1[30]="songs/";
+			char path2[30] = "samples/";
+			concatenate_string(path1, arr1[i]);
+			concatenate_string(path2, arr2[i]);
+
+			CompareWav(path1, path2,&a);
+
+			printf("%s --- %s --- %s > %s : Similarity rate: %d\n", path1,path2, arr1[i], arr2[j], a);
+		}
+	}
+
+
+	
+	//printf("------return is: %f \n", a);
+
+	/*
 
 	struct dirent *de;  // Pointer for directory entry 
 
@@ -316,5 +400,6 @@ int main(int argc, char **argv)
 		printf("%s\n", de->d_name);
 
 	closedir(dr);
+	*/
 
 }
