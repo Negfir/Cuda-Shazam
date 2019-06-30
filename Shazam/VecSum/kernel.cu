@@ -20,8 +20,7 @@
 #include <time.h>
 #include <omp.h>
 
-#define SIGNAL_SIZE        50
-#define FILTER_KERNEL_SIZE 11
+
 
 typedef float2 Complex;
 /**
@@ -39,6 +38,40 @@ compareKernel(Complex *A, Complex *B, int Size) {
 		fabs(A[i].x - B[i].x);
 	}
 		
+}
+
+static __device__ __host__ inline Complex ComplexAdd(Complex a, Complex b)
+{
+	Complex c;
+	c.x = a.x + b.x;
+	c.y = a.y + b.y;
+	return c;
+}
+
+static __device__ __host__ inline Complex ComplexMul(Complex a, Complex b)
+{
+	Complex c;
+	c.x = a.x * b.x - a.y * b.y;
+	c.y = a.x * b.y + a.y * b.x;
+	return c;
+}
+
+static __device__ __host__ inline Complex ComplexScale(Complex a, float s)
+{
+	Complex c;
+	c.x = s * a.x;
+	c.y = s * a.y;
+	return c;
+}
+
+static __global__ void ComplexPointwiseMulAndScale(Complex* A, const Complex* B, int size, float scale)
+{
+	const int numThreads = blockDim.x * gridDim.x;
+	const int threadID = blockIdx.x * blockDim.x + threadIdx.x;
+	for (int i = threadID; i < size; i += numThreads)
+		if (i < size) {
+			fabs(A[i].x - B[i].x);
+		}
 }
 
 int PadData(const Complex* signal, Complex** padded_signal, int signal_size,
@@ -71,7 +104,24 @@ int readFile(int **grades, char *addr);
 
 
 
-
+// Computes convolution on the host
+void Convolve(const Complex* signal, int signal_size,
+	const Complex* filter_kernel, int filter_kernel_size,
+	Complex* filtered_signal)
+{
+	int minRadius = filter_kernel_size / 2;
+	int maxRadius = filter_kernel_size - minRadius;
+	// Loop over output element indices
+	for (int i = 0; i < signal_size; ++i) {
+		filtered_signal[i].x = filtered_signal[i].y = 0;
+		// Loop over convolution indices
+		for (int j = -maxRadius + 1; j <= minRadius; ++j) {
+			int k = i + j;
+			if (k >= 0 && k < signal_size)
+				filtered_signal[i] = ComplexAdd(filtered_signal[i], ComplexMul(signal[k], filter_kernel[minRadius - j]));
+		}
+	}
+}
 
 
 
@@ -79,11 +129,13 @@ int readFile(int **grades, char *addr);
 int CompareWav()
 {
 	
+	printf("[simpleCUFFT] is starting...\n");
+
 	int *h_A_real = NULL;
 	unsigned int count_A;
 	count_A = readFile(&h_A_real, "M1.txt");
-	
-	
+
+
 	int *h_B_real = NULL;
 	unsigned int count_B;
 	count_B = readFile(&h_B_real, "M2.txt");
@@ -95,7 +147,7 @@ int CompareWav()
 	// Initalize the memory for the signal
 	for (unsigned int i = 0; i < count_A; ++i) {
 		printf("Int is %d \n", h_A_real[i]);
-		h_A[i].x = h_A_real[i] + 0.0 ;
+		h_A[i].x = h_A_real[i] + 0.0;
 		printf("Num is %f \n", h_A[i].x);
 		h_A[i].y = 0;
 	}
@@ -110,14 +162,17 @@ int CompareWav()
 	}
 
 	/*
-	Complex* h_padded_A;
-	Complex* h_padded_B;
+
+	// Pad signal and filter kernel
+	Complex* h_padded_signal;
+	Complex* h_padded_filter_kernel;
 	int new_size = PadData(h_signal, &h_padded_signal, SIGNAL_SIZE,
 		h_filter_kernel, &h_padded_filter_kernel, FILTER_KERNEL_SIZE);
 	int mem_size = sizeof(Complex) * new_size;
+
 	*/
 
-	unsigned int MinCount= count_B;
+	int MinCount = count_B;
 
 	if (count_A < count_B) {
 		MinCount = count_A;
@@ -129,79 +184,22 @@ int CompareWav()
 		MaxCount = count_A;
 	}
 
-
-
-	// Allocate device memory
-	double *d_C;
-	Complex *d_A, *d_B;
-
-	// Allocate host matrix C
-	unsigned int size_C = sizeof(double)* MinCount;
-	double *h_C = (double *)malloc(size_C);
-
-	if (h_C == NULL)
-	{
-		fprintf(stderr, "Failed to allocate host matrix C!\n");
-		exit(EXIT_FAILURE);
-	}
-
 	unsigned int size_A = sizeof(Complex)* count_A;
 	unsigned int size_B = sizeof(Complex)* count_B;
+	// Allocate device memory for signal
+	Complex* d_A;
+	cudaMalloc((void**)&d_A, size_A);
+	// Copy host memory to device
+	cudaMemcpy(d_A, h_A, size_A,
+		cudaMemcpyHostToDevice);
 
-	// Pad signal and filter kernel
-	Complex* h_padded_A;
-	Complex* h_padded_B;
-	int new_size = PadData(h_A, &h_padded_A, size_A,
-		h_B, &h_padded_B, size_A);
-	int mem_size = sizeof(Complex) * new_size;
+	// Allocate device memory for filter kernel
+	Complex* d_B;
+	cudaMalloc((void**)&d_B, size_B);
 
-	cudaError_t error;
-
-	error = cudaMalloc((void **)&d_A, size_A);
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaMalloc d_A returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-
-	error = cudaMalloc((void **)&d_B, size_B);
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaMalloc d_B returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-
-	error = cudaMalloc((void **)&d_C, size_C);
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaMalloc d_C returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-
-	// copy host memory to device
-	error = cudaMemcpy(d_A, h_A, size_A, cudaMemcpyHostToDevice);
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaMemcpy (d_A,h_A) returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-
-	error = cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice);
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaMemcpy (d_B,h_B) returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-
-	//----------------------------------------------------------------------------
-	printf("[simpleCUFFT] is starting...\n");
-	
-
+	// Copy host memory to device
+	cudaMemcpy(d_B, h_B, size_B,
+		cudaMemcpyHostToDevice);
 
 	// CUFFT plan
 	cufftHandle plan;
@@ -212,201 +210,46 @@ int CompareWav()
 	cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_FORWARD);
 	cufftExecC2C(plan, (cufftComplex *)d_B, (cufftComplex *)d_B, CUFFT_FORWARD);
 
-	//printf("Transforming signal back cufftExecC2C\n");
-	//cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_INVERSE);
-	//Complex* tmp = (Complex*)malloc(sizeof(Complex) * new_size);
-
-	/*
-	int Max_size = sizeof(Complex) * MaxCount;
-	Complex *h_convolved_signal = (Complex*)malloc(sizeof(Complex) * MaxCount);
-	cudaMemcpy(h_convolved_signal, d_A, mem_size,
-		cudaMemcpyDeviceToHost);
-	
-
-	for (int i = 0; i < count_A; i++) {
-		printf("FFT is %f %f \n", h_convolved_signal[i].x, h_convolved_signal[i].y);
-	}
-	
-	*/
-	
-	/*
-	cufftHandle plan;
-	cufftPlan1d(&plan, new_size, CUFFT_C2C, 1);
-
-	cufftComplex* outRes;
-
-	// Transform signal and kernel
-	printf("Transforming signal cufftExecC2C\n");
-	cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_FORWARD);
-	cufftExecC2C(plan, (cufftComplex *)d_B, (cufftComplex *)d_B, CUFFT_FORWARD);
-
-	if (cudaDeviceSynchronize() != cudaSuccess) {
-		fprintf(stderr, "Cuda error: Failed to synchronize\n");
-		exit(EXIT_FAILURE);
-	}
-
-	printf("FFT Done \n");
-
-	printf("Transforming signal back cufftExecC2C\n");
-	cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_INVERSE);
-
-	Complex* TestA = h_padded_A;
-	error=cudaMemcpy(TestA, d_A, mem_size,
-		cudaMemcpyDeviceToHost);
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaMemcpy (h_C,d_C) returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-
-
-	for (int i = 1; i < 3; i++) {
-		printf("FFT is %d %d \n", TestA[i].x, TestA[i].y);
-	}
-	
-	/*
 	// Multiply the coefficients together and normalize the result
-	
-	//ComplexPointwiseMulAndScale << <32, 256 >> >(d_signal, d_filter_kernel, new_size, 1.0f / new_size);
+	printf("Launching ComplexPointwiseMulAndScale<<< >>>\n");
+	ComplexPointwiseMulAndScale << <32, 256 >> >(d_A, d_B, MinCount, 1.0f / MinCount);
 
 	// Transform signal back
-	//printf("Transforming signal back cufftExecC2C\n");
-	//cufftExecC2C(plan, (cufftComplex *)d_signal, (cufftComplex *)d_signal, CUFFT_INVERSE);
-	//----------------------------------------------------------------------------
+	printf("Transforming signal back cufftExecC2C\n");
+	//cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_INVERSE);
 
-	// -------------cuFFT IS HERE ------------------
-	/*
-	cufftHandle plan;
-	cufftComplex *data;
+	// Copy device memory to host
+	int Min_size = sizeof(Complex) * MinCount;
+	Complex* h_convolved_signal = (Complex*)malloc(sizeof(Complex) * MinCount);;
+	cudaMemcpy(h_convolved_signal, d_A, Min_size,
+		cudaMemcpyDeviceToHost);
 
-	//cufftHandle plan;
-	//cufftPlan1d(&plan, new_size, CUFFT_C2C, 1);
-
-	if (cufftPlan1d(&plan, size_A, CUFFT_R2C, BATCH) != CUFFT_SUCCESS) {
-		fprintf(stderr, "CUFFT error: Plan creation failed");
-		exit(EXIT_FAILURE);
-	}
-	
-	//cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_FORWARD);
-	if (cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_FORWARD) != CUFFT_SUCCESS) {
-		fprintf(stderr, "CUFFT error: ExecC2C Forward failed");
-		exit(EXIT_FAILURE);
-	}
-	if (cudaDeviceSynchronize() != cudaSuccess) {
-		fprintf(stderr, "Cuda error: Failed to synchronize\n");
-		exit(EXIT_FAILURE);
+	for (int i = 0; i < MinCount; i++) {
+		printf("FFT is %f %f \n", h_convolved_signal[i].x, h_convolved_signal[i].y);
 	}
 
-	
-	printf("cuFFT Done :)");
-	//cufftComplex d= (cufftComplex*)d_A;
+	// Allocate host memory for the convolution result
+	Complex* h_convolved_signal_ref = (Complex*)malloc(sizeof(Complex) * size_A);
 
-	/*
-	for (int i = 0; i < count_A; i++) {
-		printf("FFT is %d %d \n", d_A->x, d_A->y);
-	}
+	// Convolve on the host
+	Convolve(h_A, size_A,
+		h_B, size_B,
+		h_convolved_signal_ref);
 
-	*/
+	//Destroy CUFFT context
+	cufftDestroy(plan);
 
-	int gridCount = ceil(MinCount / 1024);
-	// Setup execution parameters
-	dim3 threads(1024, 1, 1);
-	dim3 grid(gridCount, 1, 1);
-
-	
-	// Create and start timer
-	printf("Computing result using CUDA Kernel...\n");
-
-	// Allocate CUDA events that we'll use for timing
-	cudaEvent_t start;
-	error = cudaEventCreate(&start);
-
-	if (error != cudaSuccess)
-	{
-		fprintf(stderr, "Failed to create start event (error code %s)!\n", cudaGetErrorString(error));
-		exit(EXIT_FAILURE);
-	}
-
-	cudaEvent_t stop;
-	error = cudaEventCreate(&stop);
-
-	if (error != cudaSuccess)
-	{
-		fprintf(stderr, "Failed to create stop event (error code %s)!\n", cudaGetErrorString(error));
-		exit(EXIT_FAILURE);
-	}
-
-	// Record the start event
-	error = cudaEventRecord(start, NULL);
-
-	if (error != cudaSuccess)
-	{
-		fprintf(stderr, "Failed to record start event (error code %s)!\n", cudaGetErrorString(error));
-		exit(EXIT_FAILURE);
-	}
-
-	if (cudaDeviceSynchronize() != cudaSuccess) {
-		fprintf(stderr, "Cuda error: Failed to synchronize\n");
-		exit(EXIT_FAILURE);
-	}
-
-	// Execute the kernel
-	compareKernel << < grid, threads >> > (d_A, d_B, MinCount);
-	//cudaDeviceSynchronize();
-	error = cudaGetLastError();
-	if (error != cudaSuccess)
-	{
-		fprintf(stderr, "Failed to launch kernel!\n", cudaGetErrorString(error));
-		exit(EXIT_FAILURE);
-	}
-
-	// Record the stop event
-	error = cudaEventRecord(stop, NULL);
-
-	if (error != cudaSuccess)
-	{
-		fprintf(stderr, "Failed to record stop event (error code %s)!\n", cudaGetErrorString(error));
-		exit(EXIT_FAILURE);
-	}
-
-	// Wait for the stop event to complete
-	error = cudaEventSynchronize(stop);
-
-	if (error != cudaSuccess)
-	{
-		fprintf(stderr, "Failed to synchronize on the stop event (error code %s)!\n", cudaGetErrorString(error));
-		exit(EXIT_FAILURE);
-	}
-
-	float msecTotal = 0.0f;
-	error = cudaEventElapsedTime(&msecTotal, start, stop);
-
-	printf("Elapsed time in msec = %f\n", msecTotal);
-
-	if (error != cudaSuccess)
-	{
-		fprintf(stderr, "Failed to get time elapsed between events (error code %s)!\n", cudaGetErrorString(error));
-		exit(EXIT_FAILURE);
-	}
-
-	// Copy result from device to host
-	error = cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost);
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaMemcpy (h_C,d_C) returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-		exit(EXIT_FAILURE);
-	}
-
-
-	// Clean up memory
+	// cleanup memory
 	free(h_A);
 	free(h_B);
-	free(h_C);
+	//free(h_padded_signal);
+	//free(h_padded_filter_kernel);
+	free(h_convolved_signal_ref);
 	cudaFree(d_A);
 	cudaFree(d_B);
-	cudaFree(d_C);
+
+	// Clean up memory
+
 
 
 	return EXIT_SUCCESS;
