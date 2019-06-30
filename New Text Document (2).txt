@@ -33,10 +33,13 @@ typedef float2 Complex;
 
 __global__ void
 compareKernel(Complex *A, Complex *B, int Size) {
-	int i = blockIdx.x*blockDim.x + threadIdx.x;
-	//int Pvalue = 0;
+	double valueA = 0.0;
+	double valueB = 0.0;
+	double diff = 0.0;
 	if (i < Size) {
-		fabs(A[i].x - B[i].x);
+		valueA = pow(A[i].x , 2) + pow(A[i].y, 2);
+		valueB = pow(B[i].x, 2) + pow(B[i].y, 2);
+		diff += fabs(valueA - valueB);
 	}
 		
 }
