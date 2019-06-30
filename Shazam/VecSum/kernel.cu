@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-
+#include <dirent.h>
 // Adds an additional library so that timeGetTime() can be used
 
 #include <stdlib.h>
@@ -30,56 +30,32 @@ typedef float2 Complex;
 #define NX 256
 #define BATCH 1
 
-__global__ void
-compareKernel(Complex *A, Complex *B, int Size) {
-	int i = blockIdx.x*blockDim.x + threadIdx.x;
-	//int Pvalue = 0;
-	if (i < Size) {
-		fabs(A[i].x - B[i].x);
-	}
-		
-}
 
-static __device__ __host__ inline Complex ComplexAdd(Complex a, Complex b)
-{
-	Complex c;
-	c.x = a.x + b.x;
-	c.y = a.y + b.y;
-	return c;
-}
 
-static __device__ __host__ inline Complex ComplexMul(Complex a, Complex b)
-{
-	Complex c;
-	c.x = a.x * b.x - a.y * b.y;
-	c.y = a.x * b.y + a.y * b.x;
-	return c;
-}
-
-static __device__ __host__ inline Complex ComplexScale(Complex a, float s)
-{
-	Complex c;
-	c.x = s * a.x;
-	c.y = s * a.y;
-	return c;
-}
-
-static __global__ void ComplexPointwiseMulAndScale(Complex* A, Complex* B, double* res, int size)
+static __global__ void ComplexPointwiseMulAndScale(Complex* A, Complex* B, double* res, int sizeA, int sizeB)
 {
 	const int numThreads = blockDim.x * gridDim.x;
 	const int threadID = blockIdx.x * blockDim.x + threadIdx.x;
 	double valueA = 0.0;
 	double valueB = 0.0;
 	double diff = 0.0;
-	double fab = 0.0;
-	int i = threadID;
-	//for (int i = threadID; i < size; i += numThreads)
-		if (i < size) {
-			valueA = sqrt(pow(A[i].x, 2) + pow(A[i].y, 2));
-			valueB = sqrt(pow(B[i].x, 2) + pow(B[i].y, 2));
-			res[1] += fabs(valueA - valueB);
-			//res[1] += fab;
+	//double fab[sizeA];
+	
+	//int i = threadID;
+
+	for (int i = threadID; i < ((sizeA- sizeB)+1); i += numThreads) {
+		if ((i + (sizeB - 1)) < sizeA) {
+			res[i] = 0.0;
+			for (int j = 0; j < sizeB; j++) {
+					//valueA = sqrt(pow(A[i + j].x, 2) + pow(A[i + j].y, 2));
+					//valueB = sqrt(pow(B[i].x, 2) + pow(B[i].y, 2));
+					res[i] += fabs(sqrt(pow(A[i + j].x, 2) + pow(A[i + j].y, 2)) - sqrt(pow(B[i].x, 2) + pow(B[i].y, 2)));
+					//res[1] += fab;
+				
+			}
+
 		}
+	}
 	//res[1] = fab;
 }
 
@@ -113,24 +89,6 @@ int readFile(int **grades, char *addr);
 
 
 
-// Computes convolution on the host
-void Convolve(const Complex* signal, int signal_size,
-	const Complex* filter_kernel, int filter_kernel_size,
-	Complex* filtered_signal)
-{
-	int minRadius = filter_kernel_size / 2;
-	int maxRadius = filter_kernel_size - minRadius;
-	// Loop over output element indices
-	for (int i = 0; i < signal_size; ++i) {
-		filtered_signal[i].x = filtered_signal[i].y = 0;
-		// Loop over convolution indices
-		for (int j = -maxRadius + 1; j <= minRadius; ++j) {
-			int k = i + j;
-			if (k >= 0 && k < signal_size)
-				filtered_signal[i] = ComplexAdd(filtered_signal[i], ComplexMul(signal[k], filter_kernel[minRadius - j]));
-		}
-	}
-}
 
 
 
@@ -211,59 +169,61 @@ int CompareWav()
 		cudaMemcpyHostToDevice);
 
 	double *d_C;
-	cudaMalloc((void**)&d_C, 3 * sizeof(double));
-	double *h_C = (double *)malloc(3 * sizeof(double));
+	cudaMalloc((void**)&d_C, size_A * sizeof(double));
+	double *h_C = (double *)malloc(size_A * sizeof(double));
 
 	// CUFFT plan
-	cufftHandle plan;
-	cufftPlan1d(&plan, MinCount, CUFFT_C2C, 1);
+	cufftHandle planA, planB;
+	cufftPlan1d(&planA, count_A, CUFFT_C2C, 1);
+	cufftPlan1d(&planB, count_B, CUFFT_C2C, 1);
 
 	// Transform signal and kernel
 	printf("Transforming signal cufftExecC2C\n");
-	cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_FORWARD);
-	cufftExecC2C(plan, (cufftComplex *)d_B, (cufftComplex *)d_B, CUFFT_FORWARD);
+	cufftExecC2C(planA, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_FORWARD);
+	cufftExecC2C(planB, (cufftComplex *)d_B, (cufftComplex *)d_B, CUFFT_FORWARD);
 
 	// Multiply the coefficients together and normalize the result
 	printf("Launching ComplexPointwiseMulAndScale<<< >>>\n");
-	ComplexPointwiseMulAndScale << <32, 256 >> >(d_A, d_B, d_C, MinCount);
+
+	ComplexPointwiseMulAndScale << <32, 256 >> >(d_A, d_B, d_C, count_A,count_B);
 
 	// Transform signal back
 	printf("Transforming signal back cufftExecC2C\n");
 	//cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_INVERSE);
 
 	// Copy device memory to host
-	int Min_size = sizeof(Complex) * MinCount;
-	Complex* h_convolved_signal = (Complex*)malloc(sizeof(Complex) * MinCount);
-	cudaMemcpy(h_convolved_signal, d_A, Min_size,
+	int Min_size = sizeof(Complex) * count_A;
+	Complex* h_convolved_signal = (Complex*)malloc(sizeof(Complex) * count_A);
+	cudaMemcpy(h_convolved_signal, d_A, size_A,
 		cudaMemcpyDeviceToHost);
 
-	for (int i = 0; i < MinCount; i++) {
+	for (int i = 0; i < count_A; i++) {
 		printf("FFT is %f %f \n", h_convolved_signal[i].x, h_convolved_signal[i].y);
 	}
 
-	cudaMemcpy(h_C, d_C, 3 * sizeof(double),cudaMemcpyDeviceToHost);
+	cudaMemcpy(h_C, d_C, size_A * sizeof(double),cudaMemcpyDeviceToHost);
 		printf("LAD IS: %f --- %f --- %f \n", h_C[0], h_C[1],h_C[2]);
 	
 
 	// Allocate host memory for the convolution result
-	Complex* h_convolved_signal_ref = (Complex*)malloc(sizeof(Complex) * size_A);
+	//Complex* h_convolved_signal_ref = (Complex*)malloc(sizeof(Complex) * size_A);
 
 	// Convolve on the host
-	Convolve(h_A, size_A,
-		h_B, size_B,
-		h_convolved_signal_ref);
+
 
 	//Destroy CUFFT context
-	cufftDestroy(plan);
+	cufftDestroy(planA);
+	cufftDestroy(planB);
 
 	// cleanup memory
 	free(h_A);
 	free(h_B);
 	//free(h_padded_signal);
 	//free(h_padded_filter_kernel);
-	free(h_convolved_signal_ref);
+	//free(h_convolved_signal_ref);
 	cudaFree(d_A);
 	cudaFree(d_B);
+	cudaFree(d_C);
 
 	// Clean up memory
 
@@ -337,74 +297,24 @@ int readFile(int **grades, char *addr) {
 */
 int main(int argc, char **argv)
 {
-	CompareWav();
-	/*
-	char *addr = argv[1];
-	 int *grades=NULL;
-	 unsigned int size;
-	size= readFile(&grades,"M2.txt");
-	int temp = 0;
+	//CompareWav();
 
-	printf("Size is %d \n", &size);
+	struct dirent *de;  // Pointer for directory entry 
 
-	//temp = 0;
-	
-	while (size >= 0)
+						// opendir() returns a pointer of DIR type.  
+	DIR *dr = opendir(".");
+
+	if (dr == NULL)  // opendir returns NULL if couldn't open directory 
 	{
-		printf("Size is %d \n", size);
-		printf("the read value is %d\r\n", grades[temp]);
-		size--;
-		temp++;
-
+		printf("Could not open current directory");
+		return 0;
 	}
 
-	free(grades);
-	*/
 
+	// for readdir() 
+	while ((de = readdir(dr)) != NULL)
+		printf("%s\n", de->d_name);
 
-	/*
+	closedir(dr);
 
-	// By default, we use device 0
-	int devID = 0;
-	cudaSetDevice(devID);
-
-	cudaError_t error;
-	cudaDeviceProp deviceProp;
-	error = cudaGetDevice(&devID);
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaGetDevice returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-	}
-
-	error = cudaGetDeviceProperties(&deviceProp, devID);
-
-	if (deviceProp.computeMode == cudaComputeModeProhibited)
-	{
-		fprintf(stderr, "Error: device is running in <Compute Mode Prohibited>, no threads can use ::cudaSetDevice().\n");
-		exit(EXIT_SUCCESS);
-	}
-
-	if (error != cudaSuccess)
-	{
-		printf("cudaGetDeviceProperties returned error %s (code %d), line(%d)\n", cudaGetErrorString(error), error, __LINE__);
-	}
-	else
-	{
-		printf("GPU Device %d: \"%s\" with compute capability %d.%d\n\n", devID, deviceProp.name, deviceProp.major, deviceProp.minor);
-	}
-	size_t Mask_Width = M_Size;
-	size_t Width = 100000000;
-	//float* N=(float *)malloc(sizeof(float) * Width);
-	//float* M = (float *)malloc(sizeof(float) * Mask_Width);
-	//float* P = (float *)malloc(sizeof(float) * Width);
-	// Size of square matrices
-
-	//printf("[-] N = ");
-	//scanf("%u", &n);
-
-	
-
-	exit(matrix_result);
-	*/
 }
