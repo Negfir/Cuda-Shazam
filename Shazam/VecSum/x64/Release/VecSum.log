@@ -4,19 +4,20 @@
   Compiling CUDA source file kernel.cu...
   
   C:\Users\negfi\Documents\AUT\8th Semester\Multicore Programming\Final Project\Cuda Shazam\Shazam\VecSum>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\bin\nvcc.exe" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env --cl-version 2017 -ccbin "C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Tools\MSVC\14.10.25017\bin\HostX86\x64" -x cu  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.1\include"     --keep-dir x64\Release -maxrregcount=0  --machine 64 --compile -cudart static     -DWIN32 -DWIN64 -DNDEBUG -D_CONSOLE -D_MBCS -Xcompiler "/EHsc /W3 /nologo /O2 /FS /Zi  /MD " -o x64\Release\kernel.cu.obj "C:\Users\negfi\Documents\AUT\8th Semester\Multicore Programming\Final Project\Cuda Shazam\Shazam\VecSum\kernel.cu" 
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(52): warning : conversion from a string literal to "char *" is deprecated
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(57): warning : conversion from a string literal to "char *" is deprecated
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(69): warning : variable "MaxCount" was set but never used
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(136): warning : variable "data" was declared but never referenced
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(52): warning : conversion from a string literal to "char *" is deprecated
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(57): warning : conversion from a string literal to "char *" is deprecated
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(69): warning : variable "MaxCount" was set but never used
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(136): warning : variable "data" was declared but never referenced
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(84): warning : conversion from a string literal to "char *" is deprecated
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(89): warning : conversion from a string literal to "char *" is deprecated
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(126): warning : variable "MaxCount" was set but never used
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(156): warning : variable "mem_size" was declared but never referenced
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(84): warning : conversion from a string literal to "char *" is deprecated
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(89): warning : conversion from a string literal to "char *" is deprecated
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(126): warning : variable "MaxCount" was set but never used
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(156): warning : variable "mem_size" was declared but never referenced
   kernel.cu
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(161): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(205): warning C4474: 'fprintf' : too many arguments passed for format string
-  C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(205): note: placeholders and their parameters expect 0 variadic arguments, but 1 were provided
-C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(136): warning C4101: 'data': unreferenced local variable
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(98): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(107): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(312): warning C4244: 'initializing': conversion from 'double' to 'int', possible loss of data
+C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(360): warning C4474: 'fprintf' : too many arguments passed for format string
+  C:/Users/negfi/Documents/AUT/8th Semester/Multicore Programming/Final Project/Cuda Shazam/Shazam/VecSum/kernel.cu(360): note: placeholders and their parameters expect 0 variadic arguments, but 1 were provided
   LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance
   VecSum.vcxproj -> C:\Users\negfi\Documents\AUT\8th Semester\Multicore Programming\Final Project\Cuda Shazam\Shazam\x64\Release\VecSum.exe
   VecSum.vcxproj -> C:\Users\negfi\Documents\AUT\8th Semester\Multicore Programming\Final Project\Cuda Shazam\Shazam\x64\Release\VecSum.pdb (Full PDB)

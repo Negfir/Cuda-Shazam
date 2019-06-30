@@ -32,12 +32,11 @@ typedef float2 Complex;
 #define BATCH 1
 
 __global__ void
-compareKernel(Complex *A, Complex *B, int Size) {
+compareKernel(int *A, int *B, int *C) {
 	int i = blockIdx.x*blockDim.x + threadIdx.x;
 	//int Pvalue = 0;
-	if (i < Size) {
-		fabs(A[i].x - B[i].x);
-	}
+	C[i] = abs(A[i] - B[i]);
+
 		
 }
 
@@ -94,18 +93,14 @@ int CompareWav()
 	Complex* h_A = (Complex*)malloc(sizeof(Complex) * count_A);
 	// Initalize the memory for the signal
 	for (unsigned int i = 0; i < count_A; ++i) {
-		printf("Int is %d \n", h_A_real[i]);
-		h_A[i].x = h_A_real[i] + 0.0 ;
-		printf("Num is %f \n", h_A[i].x);
+		h_A[i].x = float (h_A_real[i]) ;
 		h_A[i].y = 0;
 	}
 
 	Complex* h_B = (Complex*)malloc(sizeof(Complex) * count_B);
 	// Initalize the memory for the signal
 	for (unsigned int i = 0; i < count_B; ++i) {
-		printf("Int is %d \n", h_B_real[i]);
-		h_B[i].x = h_B_real[i] + +0.0;;
-		printf("Num is %f \n", h_B[i].x);
+		h_B[i].x = float(h_B_real[i]);
 		h_B[i].y = 0;
 	}
 
@@ -132,12 +127,12 @@ int CompareWav()
 
 
 	// Allocate device memory
-	double *d_C;
+	int *d_C;
 	Complex *d_A, *d_B;
 
 	// Allocate host matrix C
-	unsigned int size_C = sizeof(double)* MinCount;
-	double *h_C = (double *)malloc(size_C);
+	unsigned int size_C = sizeof(int)* MinCount;
+	int *h_C = (int *)malloc(size_C);
 
 	if (h_C == NULL)
 	{
@@ -201,33 +196,65 @@ int CompareWav()
 	//----------------------------------------------------------------------------
 	printf("[simpleCUFFT] is starting...\n");
 	
+	Complex* h_signal = (Complex*)malloc(sizeof(Complex) * SIGNAL_SIZE);
+	// Initalize the memory for the signal
+	for (unsigned int i = 0; i < SIGNAL_SIZE; ++i) {
+		h_signal[i].x = rand() / (float)RAND_MAX;
+		h_signal[i].y = 0;
+	}
 
+	// Allocate host memory for the filter
+	Complex* h_filter_kernel = (Complex*)malloc(sizeof(Complex) * FILTER_KERNEL_SIZE);
+	// Initalize the memory for the filter
+	for (unsigned int i = 0; i < FILTER_KERNEL_SIZE; ++i) {
+		h_filter_kernel[i].x = rand() / (float)RAND_MAX;
+		h_filter_kernel[i].y = 0;
+	}
+
+	// Pad signal and filter kernel
+	Complex* h_padded_signal;
+	Complex* h_padded_filter_kernel;
+	int new_size = PadData(h_signal, &h_padded_signal, SIGNAL_SIZE,
+		h_filter_kernel, &h_padded_filter_kernel, FILTER_KERNEL_SIZE);
+	int mem_size = sizeof(Complex) * new_size;
+
+	// Allocate device memory for signal
+	Complex* d_signal;
+	cudaMalloc((void**)&d_signal, mem_size);
+	// Copy host memory to device
+	cudaMemcpy(d_signal, h_padded_signal, mem_size,
+		cudaMemcpyHostToDevice);
+
+	// Allocate device memory for filter kernel
+	Complex* d_filter_kernel;
+	cudaMalloc((void**)&d_filter_kernel, mem_size);
+
+	// Copy host memory to device
+	cudaMemcpy(d_filter_kernel, h_padded_filter_kernel, mem_size,
+		cudaMemcpyHostToDevice);
 
 	// CUFFT plan
 	cufftHandle plan;
-	cufftPlan1d(&plan, MinCount, CUFFT_C2C, 1);
+	cufftPlan1d(&plan, new_size, CUFFT_C2C, 1);
 
 	// Transform signal and kernel
 	printf("Transforming signal cufftExecC2C\n");
-	cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_FORWARD);
-	cufftExecC2C(plan, (cufftComplex *)d_B, (cufftComplex *)d_B, CUFFT_FORWARD);
+	cufftExecC2C(plan, (cufftComplex *)d_signal, (cufftComplex *)d_signal, CUFFT_FORWARD);
+	cufftExecC2C(plan, (cufftComplex *)d_filter_kernel, (cufftComplex *)d_filter_kernel, CUFFT_FORWARD);
 
-	//printf("Transforming signal back cufftExecC2C\n");
-	//cufftExecC2C(plan, (cufftComplex *)d_A, (cufftComplex *)d_A, CUFFT_INVERSE);
-	//Complex* tmp = (Complex*)malloc(sizeof(Complex) * new_size);
+	printf("Transforming signal back cufftExecC2C\n");
+	cufftExecC2C(plan, (cufftComplex *)d_signal, (cufftComplex *)d_signal, CUFFT_INVERSE);
 
-	/*
-	int Max_size = sizeof(Complex) * MaxCount;
-	Complex *h_convolved_signal = (Complex*)malloc(sizeof(Complex) * MaxCount);
-	cudaMemcpy(h_convolved_signal, d_A, mem_size,
+	Complex *h_convolved_signal = h_padded_signal;
+	cudaMemcpy(h_convolved_signal, d_signal, mem_size,
 		cudaMemcpyDeviceToHost);
-	
 
-	for (int i = 0; i < count_A; i++) {
-		printf("FFT is %f %f \n", h_convolved_signal[i].x, h_convolved_signal[i].y);
+
+	for (int i = 1; i < 3; i++) {
+		printf("FFT is %d %d \n", h_convolved_signal[i].x, h_convolved_signal[i].y);
 	}
 	
-	*/
+	
 	
 	/*
 	cufftHandle plan;
@@ -346,13 +373,9 @@ int CompareWav()
 		exit(EXIT_FAILURE);
 	}
 
-	if (cudaDeviceSynchronize() != cudaSuccess) {
-		fprintf(stderr, "Cuda error: Failed to synchronize\n");
-		exit(EXIT_FAILURE);
-	}
 
 	// Execute the kernel
-	compareKernel << < grid, threads >> > (d_A, d_B, MinCount);
+	//compareKernel << < grid, threads >> > (d_A, d_B, d_C);
 	//cudaDeviceSynchronize();
 	error = cudaGetLastError();
 	if (error != cudaSuccess)
