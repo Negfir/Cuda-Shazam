@@ -23,68 +23,52 @@
 
 
 typedef float2 Complex;
-/**
-* Matrix multiplication (CUDA Kernel) on the device: C = A * B
-*/
+
 
 #define NX 256
 #define BATCH 1
 
 
 
-static __global__ void ComplexPointwiseMulAndScale(Complex* A, Complex* B, double* res, int sizeA, int sizeB)
+static __global__ void compareKernel(Complex* A, Complex* B, double* res, int sizeA, int sizeB)
 {
 	const int numThreads = blockDim.x * gridDim.x;
 	const int threadID = blockIdx.x * blockDim.x + threadIdx.x;
 	double valueA = 0.0;
 	double valueB = 0.0;
 	double diff = 99999999999999999999999.9;
+	res[(sizeA - sizeB) + 1] = 99999999999999999999999.9;
 	//double fab[sizeA];
-	
+
 	//int i = threadID;
 
-	for (int i = threadID; i < ((sizeA- sizeB)+1); i += numThreads) {
+	for (int i = threadID; i < ((sizeA - sizeB) + 1); i += numThreads) {
 		if ((i + (sizeB - 1)) < sizeA) {
 			res[i] = 0.0;
 			for (int j = 0; j < sizeB; j++) {
-					//valueA = sqrt(pow(A[i + j].x, 2) + pow(A[i + j].y, 2));
-					//valueB = sqrt(pow(B[i].x, 2) + pow(B[i].y, 2));
-					res[i] += fabs(sqrt(pow(A[i + j].x, 2) + pow(A[i + j].y, 2)) - sqrt(pow(B[i].x, 2) + pow(B[i].y, 2)));
-					
-				
+				//valueA = sqrt(pow(A[i + j].x, 2) + pow(A[i + j].y, 2));
+				//valueB = sqrt(pow(B[i].x, 2) + pow(B[i].y, 2));
+				res[i] += fabs(sqrt(pow(A[i + j].x, 2) + pow(A[i + j].y, 2)) - sqrt(pow(B[j].x, 2) + pow(B[j].y, 2)));
+
+
 			}
 			if (res[i] < diff) {
 				diff = res[i];
 			}
 
+
 		}
+
+
 		res[(sizeA - sizeB) + 1] = diff;
+
 	}
+	//res[(sizeA - sizeB) + 1] = diff;
 	//res[1] = fab;
+
 }
 
-int PadData(const Complex* signal, Complex** padded_signal, int signal_size,
-	const Complex* filter_kernel, Complex** padded_filter_kernel, int filter_kernel_size)
-{
-	int minRadius = filter_kernel_size / 2;
-	int maxRadius = filter_kernel_size - minRadius;
-	int new_size = signal_size + maxRadius;
 
-	// Pad signal
-	Complex* new_data = (Complex*)malloc(sizeof(Complex) * new_size);
-	memcpy(new_data + 0, signal, signal_size * sizeof(Complex));
-	memset(new_data + signal_size, 0, (new_size - signal_size) * sizeof(Complex));
-	*padded_signal = new_data;
-
-	// Pad filter
-	new_data = (Complex*)malloc(sizeof(Complex) * new_size);
-	memcpy(new_data + 0, filter_kernel + minRadius, maxRadius * sizeof(Complex));
-	memset(new_data + maxRadius, 0, (new_size - filter_kernel_size) * sizeof(Complex));
-	memcpy(new_data + new_size - minRadius, filter_kernel, minRadius * sizeof(Complex));
-	*padded_filter_kernel = new_data;
-
-	return new_size;
-}
 
 
 
@@ -95,12 +79,12 @@ int readFile(int **grades, char *addr);
 
 
 
-
+ 
 
 int CompareWav(char *path1, char *path2, double *a)
 {
 	printf("%s --- %s --- \n", path1, path2);
-	
+
 	printf("[simpleCUFFT] is starting...\n");
 
 	int *h_A_real = NULL;
@@ -113,23 +97,23 @@ int CompareWav(char *path1, char *path2, double *a)
 	count_B = readFile(&h_B_real, path2);
 
 
-	unsigned int count_C= (count_A - count_B) + 2;
+	unsigned int count_C = (count_A - count_B) + 2;
 
 	Complex* h_A = (Complex*)malloc(sizeof(Complex) * count_A);
 	// Initalize the memory for the signal
 	for (unsigned int i = 0; i < count_A; ++i) {
-		printf("Int is %d \n", h_A_real[i]);
+		//printf("Int is %d \n", h_A_real[i]);
 		h_A[i].x = h_A_real[i] + 0.0;
-		printf("Num is %f \n", h_A[i].x);
+		//printf("Num is %f \n", h_A[i].x);
 		h_A[i].y = 0;
 	}
 
 	Complex* h_B = (Complex*)malloc(sizeof(Complex) * count_B);
 	// Initalize the memory for the signal
 	for (unsigned int i = 0; i < count_B; ++i) {
-		printf("Int is %d \n", h_B_real[i]);
+		//printf("Int is %d \n", h_B_real[i]);
 		h_B[i].x = h_B_real[i] + +0.0;;
-		printf("Num is %f \n", h_B[i].x);
+		//printf("Num is %f \n", h_B[i].x);
 		h_B[i].y = 0;
 	}
 
@@ -139,7 +123,7 @@ int CompareWav(char *path1, char *path2, double *a)
 	Complex* h_padded_signal;
 	Complex* h_padded_filter_kernel;
 	int new_size = PadData(h_signal, &h_padded_signal, SIGNAL_SIZE,
-		h_filter_kernel, &h_padded_filter_kernel, FILTER_KERNEL_SIZE);
+	h_filter_kernel, &h_padded_filter_kernel, FILTER_KERNEL_SIZE);
 	int mem_size = sizeof(Complex) * new_size;
 
 	*/
@@ -189,9 +173,9 @@ int CompareWav(char *path1, char *path2, double *a)
 	cufftExecC2C(planB, (cufftComplex *)d_B, (cufftComplex *)d_B, CUFFT_FORWARD);
 
 	// Multiply the coefficients together and normalize the result
-	printf("Launching ComplexPointwiseMulAndScale<<< >>>\n");
+	printf("Launching compareKernel<<< >>>\n");
 
-	ComplexPointwiseMulAndScale << <32, 256 >> >(d_A, d_B, d_C, count_A,count_B);
+	compareKernel << <32, 256 >> >(d_A, d_B, d_C, count_A, count_B);
 
 	// Transform signal back
 	printf("Transforming signal back cufftExecC2C\n");
@@ -202,17 +186,24 @@ int CompareWav(char *path1, char *path2, double *a)
 	Complex* h_convolved_signal = (Complex*)malloc(sizeof(Complex) * count_A);
 	cudaMemcpy(h_convolved_signal, d_A, size_A,
 		cudaMemcpyDeviceToHost);
-
+	/*
 	for (int i = 0; i < count_A; i++) {
-		printf("FFT is %f %f \n", h_convolved_signal[i].x, h_convolved_signal[i].y);
+	printf("FFT is %f %f \n", h_convolved_signal[i].x, h_convolved_signal[i].y);
 	}
+	*/
 
-	cudaMemcpy(h_C, d_C, count_C * sizeof(double),cudaMemcpyDeviceToHost);
+	cudaMemcpy(h_C, d_C, count_C * sizeof(double), cudaMemcpyDeviceToHost);
 	printf("------Count IS: %d - %d = %d \n", count_A, count_B, count_C);
-	for (int i = 0; i < count_C+1; i++) {
+	double min = 999999999.9;
+	for (int i = 0; i < count_C; i++) {
+		if (h_C[i] < min) {
+			min = h_C[i];
+		}
 		printf("------LAD IS: %f \n", h_C[i]);
 	}
-	*a = h_C[(count_A - count_B) + 1];
+	//*a = h_C[(count_A - count_B) + 1];
+	*a = min;
+	printf("Min is: %f \n", min);
 
 	// Allocate host memory for the convolution result
 	//Complex* h_convolved_signal_ref = (Complex*)malloc(sizeof(Complex) * size_A);
@@ -225,8 +216,15 @@ int CompareWav(char *path1, char *path2, double *a)
 	cufftDestroy(planB);
 
 	// cleanup memory
+	h_A = NULL;
+	h_B = NULL;
+	h_C = NULL;
 	free(h_A);
 	free(h_B);
+	free(h_C);
+	h_A = NULL;
+	h_B = NULL;
+	h_C = NULL;
 	//free(h_padded_signal);
 	//free(h_padded_filter_kernel);
 	//free(h_convolved_signal_ref);
@@ -242,6 +240,9 @@ int CompareWav(char *path1, char *path2, double *a)
 
 }
 
+void makeZero(double *a) {
+	*a = 0;
+}
 
 
 int readFile(int **grades, char *addr) {
@@ -251,7 +252,7 @@ int readFile(int **grades, char *addr) {
 	int count = 1;
 	long index;
 
-	
+
 
 
 	fp = fopen(addr, "rb+");
@@ -297,7 +298,7 @@ int readFile(int **grades, char *addr) {
 	} */
 
 	return(count);
-	
+
 }
 
 void concatenate_string(char *original, char *add)
@@ -345,7 +346,7 @@ int main(int argc, char **argv)
 	FILE * database2;
 	char buffer2[30];
 	int Count2 = 0;
-	
+
 	database2 = fopen("SampleNames.txt", "r");
 
 	if (NULL == database2)
@@ -365,41 +366,16 @@ int main(int argc, char **argv)
 	for (int i = 0; i < Count1; i++) {
 		for (int j = 0; j < Count2; j++) {
 			double a = 0.0;
-	
-			char path1[30]="songs/";
+
+			char path1[30] = "songs/";
 			char path2[30] = "samples/";
 			concatenate_string(path1, arr1[i]);
-			concatenate_string(path2, arr2[i]);
+			concatenate_string(path2, arr2[j]);
+			makeZero(&a);
+			CompareWav(path1, path2, &a);
 
-			CompareWav(path1, path2,&a);
-
-			printf("%s --- %s --- %s > %s : Similarity rate: %d\n", path1,path2, arr1[i], arr2[j], a);
+			printf("\%s >>> %s : Minimun LAD: %f\n", arr1[i], arr2[j], a);
 		}
 	}
-
-
-	
-	//printf("------return is: %f \n", a);
-
-	/*
-
-	struct dirent *de;  // Pointer for directory entry 
-
-						// opendir() returns a pointer of DIR type.  
-	DIR *dr = opendir(".");
-
-	if (dr == NULL)  // opendir returns NULL if couldn't open directory 
-	{
-		printf("Could not open current directory");
-		return 0;
-	}
-
-
-	// for readdir() 
-	while ((de = readdir(dr)) != NULL)
-		printf("%s\n", de->d_name);
-
-	closedir(dr);
-	*/
 
 }
